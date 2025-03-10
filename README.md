@@ -38,11 +38,6 @@ This project analyzes historical animal intake data from the **Austin Animal Cen
    ```
 3. Run the analysis by opening **Final Project.Rmd** in RStudio and knitting the report.
 
-## Future Work
-- Experimenting with advanced deep learning models.
-- Incorporating weather and economic factors in forecasting.
-- Creating an interactive dashboard for live data visualization.
-
 ## Contributors
 - **Gerard Corrales**
 
