@@ -1,0 +1,304 @@
+---
+title: "Untitled"
+author: "Gerard Corrales"
+date: "2024-11-17"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Libraries
+library(dplyr)
+library(forecast)
+library(zoo)
+library(ggplot2)
+
+```
+
+```{r}
+# Importing dataset
+intakes.data <- read.csv("Austin_Animal_Center_Intakes.csv")
+```
+
+EDA
+
+```{r}
+# Checking structure of the dataset
+str(intakes.data)
+```
+```{r}
+# View first rows
+head(intakes.data)
+```
+
+```{r}
+# Checking missing values
+colSums(is.na(intakes.data))
+```
+We don't have any missing values in any column.
+
+```{r}
+# Getting the correct Date format
+intakes.data$MonthYear <- as.Date(intakes.data$DateTime, format = "%m/%d/%Y %H:%M")
+
+# Count how many animals are in each month and put it in a new column 'month'
+monthly_counts <- intakes.data %>%
+  mutate(month = format(MonthYear, "%Y-%m")) %>%  
+  group_by(month) %>%
+  summarise(count = n())
+```
+
+```{r}
+# Convert data frame in Time Series object
+month.ts <- ts(monthly_counts$count, start = c(2013, 10), end = c(2024, 7), frequency = 12)
+
+plot(month.ts, xlab = "Time", ylab = "Animal Count", ylim = c(0, 2500), bty = "l", main= "Animal Intake")
+```
+
+This graph shows an exceptional decline in animal intakes during 2020. Also we can see a strong seasonality through the entire graph where during the same months there is a peak and then a decline. And two different trends, from 2013 until 2020 the trend seems slightly declining but quite steady and after the big trough in 2020 the trend starts increasing. 
+
+```{r}
+# Summary statistics
+# Total number of observations
+total_observations <- nrow(intakes.data)
+
+# Timeframe of the dataset
+timeframe <- range(intakes.data$MonthYear, na.rm = TRUE)
+
+# Summary table: Count of animals by type
+animal_type_summary <- intakes.data %>%
+  group_by(Animal.Type) %>%
+  summarise(Count = n()) %>%
+  arrange(desc(Count))
+
+# Print summary statistics
+print(paste("Total observations:", total_observations))
+print(paste("Timeframe:", format(timeframe[1], "%Y-%m-%d"), "to", format(timeframe[2], "%Y-%m-%d")))
+```
+```{r}
+# Print summary statistics
+print(animal_type_summary)
+```
+
+```{r}
+# Visualization: Bar chart showing distribution of animals by type
+ggplot(animal_type_summary, aes(x = reorder(Animal.Type, -Count), y = Count)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  theme_minimal() +
+  labs(
+    title = "Distribution of Animals by Type",
+    x = "Animal Type",
+    y = "Count"
+  )
+```
+
+```{r}
+# Apply a 12-month moving average for smoothing
+smooth.ts <- rollmean(month.ts, k = 12, align = "center", fill = NA)
+
+# Plot the smoothed time series
+plot(smooth.ts, xlab = "Time", ylab = "Smoothed Animal Count", 
+     main = "Smoothed Animal Intake (12-Month Average)", col = "blue", lwd = 2)
+
+# Optional: Overlay the original time series for comparison
+lines(month.ts, col = "gray", lty = 2)
+legend("topright", legend = c("Smoothed", "Original"), col = c("blue", "gray"), lty = c(1, 2), bty = "n")
+
+```
+
+```{r}
+# Original splitted series with zoom in to better understand trends
+# Creating two subsets to zoom in 2013-2020 and 2020-2024
+month.ts.2013_2020 <- window(month.ts, start = c(2013, 10), end = c(2020, 4))
+month.ts.2020_2024 <- window(month.ts, start = c(2020, 5), end = c(2024, 7))
+
+# Fitting separate straight-line trends
+trend_2013_2020 <- tslm(month.ts.2013_2020 ~ trend)
+trend_2020_2024 <- tslm(month.ts.2020_2024 ~ trend)
+
+# Plot for 2013–2020 with linear trend line
+plot(month.ts.2013_2020, xlab = "Time", ylab = "Animal Count", bty = "l", main = "Linear Trend: 2013–2020")
+lines(trend_2013_2020$fitted, lwd = 2)
+
+# Plot for 2020–2024 with linear trend line
+plot(month.ts.2020_2024, xlab = "Time", ylab = "Animal Count", bty = "l", main = "Linear Trend: 2020–2024")
+lines(trend_2020_2024$fitted, lwd = 2)
+
+```
+```{r}
+cat("Trend: 2013 to 2020")
+cat("\n")
+summary(trend_2013_2020)$coefficients
+cat("\n")
+cat("Trend: 2020 to 2024")
+cat("\n")
+summary(trend_2020_2024)$coefficients
+
+```
+The first trend (2013-2020) has a slight negative slope indicating some decline over those years. While in the second trend (2020-2024) has a more positive slope indicating higher volume in animal intakes.
+
+
+```{r}
+# Which months receive the most animals?
+# Zooming in for each full year to discover which months have peaks or troughs
+years <- 2018:2023  
+
+for (year in years) {
+  
+  year_data <- window(month.ts, start = c(year, 1), end = c(year, 12))
+  
+  # Plot 
+  plot(year_data, 
+       xaxt = "n", 
+       xlab = "Months", 
+       ylab = "Animal Count", 
+       main = paste("Animal Count (", year, ")", sep = ""), bty = "l")
+  
+    axis(1, at = time(year_data), labels = month.abb, las = 2)
+  
+  if (year == 2020 || year == 2021) {
+    
+    abline(v = time(year_data)[6], col = "red", lwd = 2, lty = 2)
+  } else {
+    
+    abline(v = time(year_data)[5], col = "red", lwd = 2, lty = 2)
+  }
+
+}
+```
+
+The graphs consistently show (seasonality) peaks during the month of May for most years (2014, 2016–2019, 2022, and 2023), with exceptions in June (2015, 2020) and June–July (2021). Additionally, all graphs display another noticeable increase during October each year.
+
+Model Selection
+
+```{r}
+# Performance Evaluation
+
+# Number of observations during the validation period (months, in this case)
+nValid <- 36
+
+# Calculating number of training observations
+nTrain <- length(month.ts) - nValid
+
+# Splitting data into training and validation periods
+train.ts <- window(month.ts, start = c(2013, 10), end = c(2013, nTrain))
+valid.ts <- window(month.ts, start = c(2013, nTrain + 1), end = c(2013, nTrain + nValid))
+
+# Fit ETS model on training data
+train.ets.ANA <- ets(train.ts, model = "ANA") # Additive level, no trend, additive seasonality
+train.ets.AAA <- ets(train.ts, model = "AAA") # Additive level, additive trend, additive seasonality
+train.ets.MNM <- ets(train.ts, model = "MNM") # Multiplicative level, no trend, multiplicative seasonality
+train.ets.ANN <- train.ets.MNM <- ets(train.ts, model = "ANN") # Additive level, no trend, no seasonality
+sarima_model <- auto.arima(train.ts, seasonal = TRUE, stepwise = FALSE, approximation = FALSE)
+
+# Forecast for the validation period
+train.ets.ANA.pred <- forecast(train.ets.ANA, h = nValid)
+train.ets.AAA.pred <- forecast(train.ets.AAA, h = nValid)
+train.ets.MNM.pred <- forecast(train.ets.MNM, h = nValid)
+train.ets.ANN.pred <- forecast(train.ets.ANN, h = nValid)
+sarima_forecast <- forecast(sarima_model, h = nValid)
+
+# Plot forecast against validation data
+plot(train.ets.ANA.pred, main = "Model ETS(ANA) Forecast vs Validation", xlab = "Time", ylab = "Animal Count", bty = "l")
+lines(valid.ts, col = "red")  
+legend("bottomleft", legend = c("Validation", "Forecast"), col = c("red", "blue"), lty = 1)
+
+plot(train.ets.AAA.pred, main = "Model ETS(AAA) Forecast vs Validation", xlab = "Time", ylab = "Animal Count", bty = "l")
+lines(valid.ts, col = "red")  
+legend("bottomleft", legend = c("Validation", "Forecast"), col = c("red", "blue"), lty = 1)
+
+plot(sarima_forecast, main = "Seasonal ARIMA Forecast vs Validation", xlab = "Time", ylab = "Animal Count", bty = "l")
+lines(valid.ts, col = "red")  
+legend("bottomleft", legend = c("Validation", "Forecast"), col = c("red", "blue"), lty = 1)
+
+plot(train.ets.MNM.pred, main = "Model ETS(MNM) Forecast vs Validation", xlab = "Time", ylab = "Animal Count", bty = "l")
+lines(valid.ts, col = "red")  
+legend("bottomleft", legend = c("Validation", "Forecast"), col = c("red", "blue"), lty = 1)
+
+plot(train.ets.ANN.pred, main = "Model ETS(ANN) Forecast vs Validation", xlab = "Time", ylab = "Animal Count", bty = "l")
+lines(valid.ts, col = "red")  
+legend("bottomleft", legend = c("Validation", "Forecast"), col = c("red", "blue"), lty = 1)
+
+```
+
+Since our series does not have a consistent upward or downward trend due to the dip in 2020, the selected method was Exponential smoothing model to capture seasonality and proper forecast.
+
+```{r}
+# Running accuracy metrics
+cat("ETS(ANA)")
+accuracy(train.ets.ANA.pred, valid.ts)
+cat("\n")
+cat("ETS(AAA)")
+accuracy(train.ets.AAA.pred, valid.ts)
+cat("\n")
+cat("ETS(MNM)")
+accuracy(train.ets.MNM.pred, valid.ts)
+cat("\n")
+cat("ETS(ANN)")
+accuracy(train.ets.ANN.pred, valid.ts)
+cat("\n")
+cat("ETS(ARIMA)")
+accuracy(sarima_forecast, valid.ts)
+
+```
+
+This results indicates *ETS(ANA)** is the best fit and forecast accuracy because it has the lowest RMSE, MAE, and MAPE. 
+
+
+```{r}
+future_forecast <- forecast(train.ets.ANA, h = 12)
+plot(future_forecast, main = "Future Forecast of Animal Intakes", xlab = "Time", ylab = "Animal Count")
+
+```
+
+
+
+```{r}
+checkresiduals(train.ets.ANA.pred)
+```
+
+In the time series of residuals, the residuals fluctuate around zero suggesting that the model has captured the main structure of the data. 
+
+The ACF plot indicates the model has no significant autocorrelation because all the bars are withing the blue dashed lines. 
+
+The histogram shows a normal distribution. 
+
+The Ljung-Box test fails to reject the null hypothesis meaning the model explains the data.
+
+```{r}
+# Neural Network Model
+set.seed(201)
+
+# Training model
+train.nnetar <- nnetar(train.ts)
+
+# Forecast the model
+train.nnetar.pred <- forecast(train.nnetar, h = length(valid.ts))
+
+# Plot
+plot(train.ts, ylab = "Animal Count", xlab = "Time", bty = "l", lty = 1, main = "Neural Network VS. Validation", xlim = c(2013.9, 2024))
+
+lines(train.nnetar.pred$fitted, lwd = 2, col = "blue")
+
+lines(train.nnetar.pred$mean, lwd = 2, col = "blue", lty = 2)
+
+lines(valid.ts, col = "red")
+
+
+```
+
+```{r}
+
+# Summary
+cat("Summary:\n")
+summary(train.nnetar)
+
+# Checking accuracy
+cat("\nAccuracy:")
+accuracy(train.nnetar.pred, valid.ts)
+```
+
+
